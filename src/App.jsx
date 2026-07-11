@@ -32,6 +32,11 @@ export default function App() {
   const [buzzerOn, setBuzzerOn] = useState(false);
   const [buzzerVolume, setBuzzerVolume] = useState(50);
 
+  // Last manual slider values, saved when proximity mode turns on so they
+  // can be restored when it turns back off
+  const [lastManualLedBrightness, setLastManualLedBrightness] = useState(50);
+  const [lastManualBuzzerVolume, setLastManualBuzzerVolume] = useState(50);
+
   const { 
     connectedDevice, 
     connect, 
@@ -85,6 +90,18 @@ export default function App() {
   };
 
   const handleToggleProximityResponse = () => {
+    if (!proximityResponseEnabled) {
+      // Turning proximity mode ON: remember the current manual slider
+      // positions so they can be restored when it's turned back off.
+      setLastManualLedBrightness(ledBrightness);
+      setLastManualBuzzerVolume(buzzerVolume);
+    } else {
+      // Turning proximity mode OFF: restore the manual slider positions.
+      // ControlPanel's manual-mode effect will pick up this state change
+      // and send the restored values over BLE automatically.
+      setLedBrightness(lastManualLedBrightness);
+      setBuzzerVolume(lastManualBuzzerVolume);
+    }
     setProximityResponseEnabled(!proximityResponseEnabled);
   };
 
