@@ -61,6 +61,20 @@ export default function useBLE() {
       return;
     }
 
+    // Defensive: if a previous connection is still live (e.g. connect() got
+    // triggered twice without an explicit disconnect in between), tear it
+    // down first so we never end up with two overlapping polling loops or
+    // two sets of characteristic references.
+    if (deviceRef.current) {
+      pollingActiveRef.current = false;
+      try {
+        deviceRef.current.gatt.disconnect();
+      } catch (error) {
+        console.error('Cleanup of previous connection failed:', error);
+      }
+      deviceRef.current = null;
+    }
+
     try {
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(SERVICE_UUID);
@@ -78,6 +92,23 @@ export default function useBLE() {
       rssiCharacteristicRef.current = rssiCharacteristic;
 
       deviceRef.current = device;
+
+      // Listen for unexpected disconnects (e.g. walking out of range, the
+      // phone's Bluetooth stack silently dropping and re-bonding) — not just
+      // ones triggered by our own disconnect() button. Without this, an
+      // unexpected drop could leave pollingActiveRef/characteristic refs in
+      // a stale state while the UI still believes it's connected.
+      device.addEventListener('gattserverdisconnected', () => {
+        console.log('Unexpected GATT disconnect detected');
+        pollingActiveRef.current = false;
+        deviceRef.current = null;
+        ledCharacteristicRef.current = null;
+        buzzerCharacteristicRef.current = null;
+        rssiCharacteristicRef.current = null;
+        setConnectedDevice(null);
+        setRssi(null);
+        setProximityPercent(0);
+      }, { once: true });
 
       setConnectedDevice({
         id: device.id,
@@ -160,6 +191,17 @@ export default function useBLE() {
   // couple hundred ms of each other.
   // ========================================================================
   const startContinuousPolling = useCallback(() => {
+    // Guard against multiple overlapping polling loops. Without this, if
+    // connect() ever runs a second time in the same session (e.g. the user
+    // taps Connect again without disconnecting first), a second independent
+    // setTimeout chain would start alongside the first — both querying RSSI
+    // and both triggering LED/buzzer writes, roughly 1s apart but offset in
+    // phase, producing clusters of near-simultaneous writes.
+    if (pollingActiveRef.current) {
+      console.log('Polling already active, skipping duplicate start');
+      return;
+    }
+
     pollingActiveRef.current = true;
 
     const pollRssi = async () => {
