@@ -48,7 +48,7 @@ export default function useBLE() {
   const ledCharacteristicRef = useRef(null);
   const buzzerCharacteristicRef = useRef(null);
   const rssiCharacteristicRef = useRef(null);
-  const pollingIntervalRef = useRef(null);
+  const pollingActiveRef = useRef(false);
 
   // ========================================================================
   // Connect to Device
@@ -100,11 +100,9 @@ export default function useBLE() {
   // Disconnect from Device
   // ========================================================================
   const disconnect = useCallback(async () => {
-    // Stop polling
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
+    // Stop polling — the loop checks this flag before scheduling its next
+    // iteration, so no more polls will fire after this.
+    pollingActiveRef.current = false;
 
     if (deviceRef.current) {
       try {
@@ -153,14 +151,19 @@ export default function useBLE() {
 
   // ========================================================================
   // Continuous RSSI Polling (Every 1 second)
+  // Self-rescheduling: each poll only schedules the next one after it
+  // resolves, so a slow BLE read can never overlap with the next poll.
+  // The old setInterval version fired unconditionally every 1000ms even if
+  // the previous readValue() hadn't finished, which could queue up several
+  // reads and then fire them all in a burst once the connection caught up —
+  // seen in testing as several near-duplicate LED/buzzer writes within a
+  // couple hundred ms of each other.
   // ========================================================================
   const startContinuousPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-    }
+    pollingActiveRef.current = true;
 
     const pollRssi = async () => {
-      if (!rssiCharacteristicRef.current) return;
+      if (!pollingActiveRef.current || !rssiCharacteristicRef.current) return;
 
       try {
         const value = await rssiCharacteristicRef.current.readValue();
@@ -177,11 +180,16 @@ export default function useBLE() {
       } catch (error) {
         console.error('Auto-poll RSSI error:', error);
       }
+
+      // Only schedule the next poll after this one has fully resolved
+      // (success or failure), and only if we're still connected.
+      if (pollingActiveRef.current) {
+        setTimeout(pollRssi, 1000);
+      }
     };
 
-    // Poll immediately, then every 1 second
+    // Poll immediately, then self-reschedule every 1 second
     pollRssi();
-    pollingIntervalRef.current = setInterval(pollRssi, 1000);
   }, []);
 
   // ========================================================================
