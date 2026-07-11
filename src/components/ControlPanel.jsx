@@ -35,11 +35,15 @@ export default function ControlPanel({
     if (ledOn) {
       sendLedBrightness(outputValue);
       setLedBrightness(outputPercent);
+    } else {
+      sendLedBrightness(0);
     }
 
     if (buzzerOn) {
       sendBuzzerVolume(outputValue);
       setBuzzerVolume(outputPercent);
+    } else {
+      sendBuzzerVolume(0);
     }
 
     console.log('Proximity Response active: Output value =', outputValue);
