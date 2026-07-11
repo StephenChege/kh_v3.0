@@ -19,6 +19,10 @@ export default function App() {
     const saved = localStorage.getItem('keyholder-proximity-response');
     return saved ? saved === 'true' : false;
   });
+
+  // Distance Status card visibility (separate from proximity mode itself —
+  // hiding the bar does not stop proximity auto-control from running)
+  const [showDistanceStatus, setShowDistanceStatus] = useState(true);
   
   // LED state
   const [ledOn, setLedOn] = useState(false);
@@ -82,6 +86,10 @@ export default function App() {
 
   const handleToggleProximityResponse = () => {
     setProximityResponseEnabled(!proximityResponseEnabled);
+  };
+
+  const handleToggleDistanceStatus = () => {
+    setShowDistanceStatus(!showDistanceStatus);
   };
 
   const bgClass = darkMode ? 'bg-slate-950' : 'bg-white';
@@ -170,6 +178,8 @@ export default function App() {
               proximityPercent={proximityPercent}
               proximityResponseEnabled={proximityResponseEnabled}
               onToggleProximityResponse={handleToggleProximityResponse}
+              showDistanceStatus={showDistanceStatus}
+              onToggleDistanceStatus={handleToggleDistanceStatus}
               getProximityOutputValue={getProximityOutputValue}
             />
 

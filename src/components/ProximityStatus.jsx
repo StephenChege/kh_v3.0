@@ -5,7 +5,9 @@ export default function ProximityStatus({
   proximityPercent,
   darkMode,
   proximityResponseEnabled,
-  onToggleProximityResponse
+  onToggleProximityResponse,
+  showDistanceStatus,
+  onToggleDistanceStatus
 }) {
   const cardClass = darkMode 
     ? 'bg-slate-900 border-slate-800' 
@@ -15,39 +17,53 @@ export default function ProximityStatus({
     <div className={`p-4 rounded-lg border ${cardClass} mb-6`}>
       <div className="flex items-center justify-between mb-3">
         <p className="font-medium">Distance Status</p>
-        <span className={`text-xs px-2 py-1 rounded ${
-          proximityResponseEnabled
-            ? 'bg-emerald-500/20 text-emerald-400'
-            : darkMode
-              ? 'bg-slate-800 text-slate-400'
-              : 'bg-slate-200 text-slate-600'
-        }`}>
-          {proximityResponseEnabled ? '🔴 Active' : '⚪ Inactive'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-1 rounded ${
+            proximityResponseEnabled
+              ? 'bg-emerald-500/20 text-emerald-400'
+              : darkMode
+                ? 'bg-slate-800 text-slate-400'
+                : 'bg-slate-200 text-slate-600'
+          }`}>
+            {proximityResponseEnabled ? '🔴 Active' : '⚪ Inactive'}
+          </span>
+          <button
+            onClick={onToggleDistanceStatus}
+            className={`text-xs px-2 py-1 rounded font-medium ${
+              darkMode
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+            }`}
+          >
+            {showDistanceStatus ? 'Hide' : 'Show'}
+          </button>
+        </div>
       </div>
 
-      {rssi !== null ? (
-        <>
-          <p className={`text-sm mb-3 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-            RSSI: {rssi} dBm
+      {showDistanceStatus && (
+        rssi !== null ? (
+          <>
+            <p className={`text-sm mb-3 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              RSSI: {rssi} dBm
+            </p>
+            
+            {/* Proximity Bar */}
+            <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden mb-2">
+              <div
+                className="bg-gradient-to-r from-blue-500 via-emerald-500 to-amber-500 h-3 rounded-full transition-all duration-300"
+                style={{ width: `${proximityPercent}%` }}
+              ></div>
+            </div>
+            
+            <p className={`text-xs mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              Proximity: {proximityPercent}% (Far ← → Close)
+            </p>
+          </>
+        ) : (
+          <p className={`text-sm mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+            Searching for signal...
           </p>
-          
-          {/* Proximity Bar */}
-          <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden mb-2">
-            <div
-              className="bg-gradient-to-r from-blue-500 via-emerald-500 to-amber-500 h-3 rounded-full transition-all duration-300"
-              style={{ width: `${proximityPercent}%` }}
-            ></div>
-          </div>
-          
-          <p className={`text-xs mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-            Proximity: {proximityPercent}% (Far ← → Close)
-          </p>
-        </>
-      ) : (
-        <p className={`text-sm mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-          Searching for signal...
-        </p>
+        )
       )}
 
       {/* Proximity Response Toggle */}

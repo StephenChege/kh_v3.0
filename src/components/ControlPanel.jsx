@@ -18,6 +18,8 @@ export default function ControlPanel({
   proximityPercent,
   proximityResponseEnabled,
   onToggleProximityResponse,
+  showDistanceStatus,
+  onToggleDistanceStatus,
   getProximityOutputValue
 }) {
   // When Proximity Response is ON, automatically update LED/Buzzer based on
@@ -79,6 +81,8 @@ export default function ControlPanel({
         darkMode={darkMode}
         proximityResponseEnabled={proximityResponseEnabled}
         onToggleProximityResponse={onToggleProximityResponse}
+        showDistanceStatus={showDistanceStatus}
+        onToggleDistanceStatus={onToggleDistanceStatus}
       />
 
       {/* Info when Proximity Response is Active */}
