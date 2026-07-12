@@ -22,10 +22,14 @@ export default function ControlPanel({
   onToggleDistanceStatus,
   getProximityOutputValue
 }) {
-  // When Proximity Response is ON, automatically update LED/Buzzer based on
-  // proximity. LED and buzzer respond independently — each only auto-adjusts
-  // while its own ON/OFF toggle is on, so a user can run proximity mode with
-  // just the LED (or just the buzzer) active.
+  // When Proximity Response is ON, automatically update LED based on
+  // proximity. Split into its own effect (separate from buzzer) so an LED
+  // update never fires in the same synchronous tick as a buzzer update —
+  // firing two BLE writeValue() calls back-to-back without awaiting the
+  // first is a known Web Bluetooth trap: the second write can be silently
+  // rejected ("GATT operation already in progress"), and since both
+  // sendLedBrightness/sendBuzzerVolume catch their own errors into
+  // console.error, a dropped write is invisible without a browser console.
   useEffect(() => {
     if (!proximityResponseEnabled || !connectedDevice) return;
 
@@ -38,6 +42,15 @@ export default function ControlPanel({
     } else {
       sendLedBrightness(0);
     }
+  }, [proximityPercent, proximityResponseEnabled, ledOn, connectedDevice, getProximityOutputValue, sendLedBrightness, setLedBrightness]);
+
+  // Buzzer half of proximity auto-control — separate effect, only fires on
+  // buzzer-relevant changes, never bundled with an LED write.
+  useEffect(() => {
+    if (!proximityResponseEnabled || !connectedDevice) return;
+
+    const outputValue = getProximityOutputValue();
+    const outputPercent = Math.round((outputValue / 255) * 100);
 
     if (buzzerOn) {
       sendBuzzerVolume(outputValue);
@@ -45,11 +58,10 @@ export default function ControlPanel({
     } else {
       sendBuzzerVolume(0);
     }
+  }, [proximityPercent, proximityResponseEnabled, buzzerOn, connectedDevice, getProximityOutputValue, sendBuzzerVolume, setBuzzerVolume]);
 
-    console.log('Proximity Response active: Output value =', outputValue);
-  }, [proximityPercent, proximityResponseEnabled, ledOn, buzzerOn, connectedDevice, getProximityOutputValue, sendLedBrightness, sendBuzzerVolume, setLedBrightness, setBuzzerVolume]);
-
-  // When Proximity Response is OFF, send manual slider values
+  // When Proximity Response is OFF, send manual LED slider value.
+  // Own effect — only fires on LED-relevant changes.
   useEffect(() => {
     if (!proximityResponseEnabled && connectedDevice) {
       if (ledOn) {
@@ -57,14 +69,21 @@ export default function ControlPanel({
       } else {
         sendLedBrightness(0);
       }
+    }
+  }, [ledBrightness, ledOn, connectedDevice, proximityResponseEnabled, sendLedBrightness]);
 
+  // When Proximity Response is OFF, send manual buzzer slider value.
+  // Own effect — only fires on buzzer-relevant changes, never bundled
+  // with an LED write in the same tick.
+  useEffect(() => {
+    if (!proximityResponseEnabled && connectedDevice) {
       if (buzzerOn) {
         sendBuzzerVolume(Math.round((buzzerVolume * 255) / 100));
       } else {
         sendBuzzerVolume(0);
       }
     }
-  }, [ledBrightness, ledOn, buzzerOn, buzzerVolume, connectedDevice, proximityResponseEnabled, sendLedBrightness, sendBuzzerVolume]);
+  }, [buzzerOn, buzzerVolume, connectedDevice, proximityResponseEnabled, sendBuzzerVolume]);
 
   const cardClass = darkMode 
     ? 'bg-slate-900 border-slate-800' 
