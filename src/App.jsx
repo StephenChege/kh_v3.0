@@ -10,8 +10,14 @@ export default function App() {
   });
   
   const [showSettings, setShowSettings] = useState(false);
-  const [deviceName, setDeviceName] = useState(() => {
-    return localStorage.getItem('keyholder-device-name') || 'My Device';
+
+  // Per-device friendly names, keyed by the device's unique Bluetooth ID
+  // (connectedDevice.id) rather than one flat string — so each physical
+  // Keyholder can have its own name ("Wallet", "TV Remote", etc.) instead
+  // of every device sharing whatever name was typed last.
+  const [deviceNames, setDeviceNames] = useState(() => {
+    const saved = localStorage.getItem('keyholder-device-names');
+    return saved ? JSON.parse(saved) : {};
   });
   
   // Proximity Response Toggle
@@ -55,12 +61,10 @@ export default function App() {
     localStorage.setItem('keyholder-theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
-  // Save device name
+  // Save device names map
   useEffect(() => {
-    if (deviceName) {
-      localStorage.setItem('keyholder-device-name', deviceName);
-    }
-  }, [deviceName]);
+    localStorage.setItem('keyholder-device-names', JSON.stringify(deviceNames));
+  }, [deviceNames]);
 
   // Save proximity response preference
   useEffect(() => {
@@ -69,6 +73,18 @@ export default function App() {
 
   const handleAddDevice = async () => {
     await startDiscovery();
+  };
+
+  // Friendly name for the currently connected device: look up by its
+  // Bluetooth ID, fall back to the raw BLE advertised name, then a generic
+  // default if neither is available.
+  const deviceName = connectedDevice
+    ? (deviceNames[connectedDevice.id] || connectedDevice.name || 'My Keyholder')
+    : 'My Device';
+
+  const handleRenameDevice = (newName) => {
+    if (!connectedDevice) return;
+    setDeviceNames((prev) => ({ ...prev, [connectedDevice.id]: newName }));
   };
 
   const handleDisconnect = () => {
@@ -80,7 +96,7 @@ export default function App() {
   const handleResetAll = () => {
     if (window.confirm('Reset all settings? This will clear device names and theme preferences.')) {
       localStorage.clear();
-      setDeviceName('My Device');
+      setDeviceNames({});
       setDarkMode(true);
       setProximityResponseEnabled(false);
       setLedOn(false);
@@ -144,7 +160,7 @@ export default function App() {
           onThemeToggle={() => setDarkMode(!darkMode)}
           connectedDevice={connectedDevice}
           deviceName={deviceName}
-          onRenameDevice={(newName) => setDeviceName(newName)}
+          onRenameDevice={handleRenameDevice}
           onDisconnect={handleDisconnect}
           onResetSettings={handleResetAll}
         />
