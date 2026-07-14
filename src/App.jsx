@@ -193,14 +193,7 @@ export default function App() {
           </button>
         </div>
       </header>
-
-      {/* TEMPORARY DEBUG BANNER — remove once "Known Keyholders" issue is diagnosed */}
-      <div className="max-w-2xl mx-auto px-4 pt-3">
-        <div className="p-2 rounded bg-amber-500/20 border border-amber-500 text-amber-300 text-xs">
-          DEBUG: {debugInfo}
-        </div>
-      </div>
-
+      
       {/* Settings Panel */}
       {showSettings && (
         <Settings
