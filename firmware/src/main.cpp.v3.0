@@ -4,18 +4,15 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <esp_gap_ble_api.h>
-#include <esp_system.h>
-#include <Preferences.h>
 
 // ============================================================================
-// KEYHOLDER V3.1 — FIRMWARE-SIDE DEVICE NAMING
-// Builds on V3.0's unified firmware. Adds a BLE characteristic that lets the
-// PWA push a custom name, persisted to NVS (flash) so it survives reboots
-// and shows up directly in the OS Bluetooth picker — not just inside the app.
+// KEYHOLDER V3.0 — UNIFIED FIRMWARE
+// Merge of V1.0 (manual LED/buzzer control) + V2.0 (RSSI reporting)
 //
-// Architecture note: proximity auto-control logic still lives in the PWA,
-// not here. This firmware remains "dumb" for LED/buzzer/RSSI — naming is
-// the only thing it now manages state for.
+// Architecture note: proximity auto-control logic lives in the PWA, not here.
+// This firmware is intentionally "dumb": it always accepts LED/buzzer writes
+// and always reports RSSI. The PWA decides whether to drive LED/buzzer from
+// manual sliders or from a proximity calculation — see pwa/src/hooks/useBLE.js
 // ============================================================================
 
 // ============================================================================
@@ -44,7 +41,6 @@
 #define LED_WRITE_UUID "deadbeef-1234-1234-1234-123456789abc"
 #define BUZZER_WRITE_UUID "deadbeef-1234-1234-1234-123456789abd"
 #define RSSI_CHARACTERISTIC_UUID "abcd1234-5678-1234-5678-abcdef123457"
-#define NAME_WRITE_UUID "deadbeef-1234-1234-1234-123456789abe"
 
 // ============================================================================
 // MEASUREMENT INTERVAL
@@ -52,22 +48,12 @@
 #define MEASUREMENT_INTERVAL_MS 1000  // 1 second
 
 // ============================================================================
-// DEVICE NAMING
-// ============================================================================
-#define MAX_NAME_LENGTH 20
-#define NVS_NAMESPACE "keyholder"
-#define NVS_NAME_KEY "device_name"
-
-// ============================================================================
 // GLOBAL VARIABLES
 // ============================================================================
 BLECharacteristic *pLedCharacteristic;
 BLECharacteristic *pBuzzerCharacteristic;
 BLECharacteristic *pRSSICharacteristic;
-BLECharacteristic *pNameCharacteristic;
 BLEServer *pServer;
-Preferences preferences;
-String deviceName;
 bool deviceConnected = false;
 int currentRSSI = 0;              // Updated by GAP callback
 unsigned long lastMeasurementTime = 0;
@@ -83,37 +69,6 @@ void logToSerial(const String &message) {
 
   String timestamp = "[" + String(seconds) + "." + String(millis_part) + "s] ";
   Serial.println(timestamp + message);
-}
-
-// ============================================================================
-// DEFAULT DEVICE NAME
-// Generated from the last 2 bytes of the device's Bluetooth MAC address, so
-// a fresh/unconfigured board still has a unique, distinguishable name in the
-// OS picker (e.g. "BTFind-A3F2") instead of every unnamed unit looking
-// identical. Falls back to this whenever NVS has no saved name — including
-// after a factory reset (clearing NVS), not just on first boot.
-// ============================================================================
-String getDefaultDeviceName() {
-  uint8_t mac[6];
-  esp_read_mac(mac, ESP_MAC_BT);
-
-  char suffix[5];
-  sprintf(suffix, "%02X%02X", mac[4], mac[5]);
-
-  return "BTFind-" + String(suffix);
-}
-
-// ============================================================================
-// APPLY DEVICE NAME
-// Updates the live GAP device name and restarts advertising so the new name
-// is visible to anyone scanning fresh. Does NOT drop the current connection
-// if one is active — only affects what future scans/pickers see.
-// ============================================================================
-void applyDeviceName(const String &name) {
-  esp_ble_gap_set_device_name(name.c_str());
-  BLEDevice::getAdvertising()->stop();
-  BLEDevice::getAdvertising()->start();
-  logToSerial("Device name applied: " + name);
 }
 
 // ============================================================================
@@ -206,33 +161,6 @@ class BuzzerCharacteristicCallbacks : public BLECharacteristicCallbacks {
 };
 
 // ============================================================================
-// BLE CHARACTERISTIC CALLBACKS - DEVICE NAME
-// Accepts a name from the PWA, truncates to MAX_NAME_LENGTH, persists it to
-// NVS, and applies it immediately (renames + restarts advertising).
-// ============================================================================
-class NameCharacteristicCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    std::string valueStr = pCharacteristic->getValue();
-
-    if (valueStr.length() == 0) {
-      logToSerial("Name write rejected: empty value");
-      return;
-    }
-
-    String newName = String(valueStr.c_str());
-    if (newName.length() > MAX_NAME_LENGTH) {
-      newName = newName.substring(0, MAX_NAME_LENGTH);
-    }
-
-    preferences.putString(NVS_NAME_KEY, newName);
-    deviceName = newName;
-    applyDeviceName(deviceName);
-
-    logToSerial("Name saved to NVS: " + newName);
-  }
-};
-
-// ============================================================================
 // BLE SERVER CALLBACKS
 // ============================================================================
 class MyServerCallbacks : public BLEServerCallbacks {
@@ -250,17 +178,6 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
     logToSerial("Phone connected! MAC: " + macStr);
     lastMeasurementTime = millis();
-
-    // Brief "you're connected" confirmation — a short LED flash + buzzer
-    // chirp. This benefits ANY BLE client (nRF Connect, Bluefy, the PWA),
-    // not just the PWA, since it's purely firmware-driven and doesn't
-    // depend on any app-side logic. Runs once, then falls back to whatever
-    // state a client's writes establish afterward.
-    ledcWrite(LED_PWM_CHANNEL, 180);
-    ledcWrite(BUZZER_PWM_CHANNEL, 150);
-    delay(150);
-    ledcWrite(LED_PWM_CHANNEL, 0);
-    ledcWrite(BUZZER_PWM_CHANNEL, 0);
   }
 
   void onDisconnect(BLEServer *pServer) {
@@ -268,18 +185,6 @@ class MyServerCallbacks : public BLEServerCallbacks {
     ledcWrite(LED_PWM_CHANNEL, 0);
     ledcWrite(BUZZER_PWM_CHANNEL, 0);
     logToSerial("Phone disconnected. LED and buzzer turned off.");
-
-    // Disconnect confirmation — two short flashes, deliberately distinct
-    // from onConnect's single flash so you can tell connect vs. disconnect
-    // apart by ear/eye alone, without checking a phone.
-    for (int i = 0; i < 2; i++) {
-      ledcWrite(LED_PWM_CHANNEL, 180);
-      ledcWrite(BUZZER_PWM_CHANNEL, 150);
-      delay(100);
-      ledcWrite(LED_PWM_CHANNEL, 0);
-      ledcWrite(BUZZER_PWM_CHANNEL, 0);
-      delay(100);
-    }
 
     // Restart advertising so the device is discoverable again without a
     // manual reset. BLEDevice::getAdvertising() returns the same singleton
@@ -297,25 +202,12 @@ void setup() {
   delay(1000);
 
   logToSerial("===========================================");
-  logToSerial("Keyholder V3.1 — Firmware-Side Device Naming");
+  logToSerial("Keyholder V3.0 — Unified Firmware");
   logToSerial("===========================================");
 
   initializePWM();
 
-  // Load saved name from NVS. If none exists yet (fresh board, or NVS was
-  // cleared for a factory reset), fall back to the MAC-based default —
-  // this fallback is NOT written back to NVS, so the board keeps generating
-  // it fresh on every boot until a real name is explicitly set.
-  preferences.begin(NVS_NAMESPACE, false);
-  deviceName = preferences.getString(NVS_NAME_KEY, "");
-  if (deviceName.length() == 0) {
-    deviceName = getDefaultDeviceName();
-    logToSerial("No saved name in NVS, using default: " + deviceName);
-  } else {
-    logToSerial("Loaded saved name from NVS: " + deviceName);
-  }
-
-  BLEDevice::init(deviceName.c_str());
+  BLEDevice::init("ESP32_Proximity");
   esp_ble_gap_register_callback(ble_gap_event_callback);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -345,13 +237,6 @@ void setup() {
   uint8_t rssiInitial[2] = {0x00, 0x00};
   pRSSICharacteristic->setValue(rssiInitial, 2);
 
-  // Device NAME WRITE characteristic (new in V3.1)
-  pNameCharacteristic = pService->createCharacteristic(
-    NAME_WRITE_UUID,
-    BLECharacteristic::PROPERTY_WRITE
-  );
-  pNameCharacteristic->setCallbacks(new NameCharacteristicCallbacks());
-
   pService->start();
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -362,12 +247,10 @@ void setup() {
   pAdvertising->start();
 
   logToSerial("BLE initialized");
-  logToSerial("Device name: " + deviceName);
   logToSerial("Service UUID: " + String(SERVICE_UUID));
   logToSerial("LED Write UUID: " + String(LED_WRITE_UUID));
   logToSerial("Buzzer Write UUID: " + String(BUZZER_WRITE_UUID));
   logToSerial("RSSI Characteristic UUID: " + String(RSSI_CHARACTERISTIC_UUID));
-  logToSerial("Name Write UUID: " + String(NAME_WRITE_UUID));
   logToSerial("Waiting for connection...");
 }
 
@@ -393,4 +276,3 @@ void loop() {
 
   delay(100);
 }
-
