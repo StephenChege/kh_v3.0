@@ -4,6 +4,9 @@ const SERVICE_UUID = '12345678-1234-1234-1234-123456789abc';
 const LED_WRITE_UUID = 'deadbeef-1234-1234-1234-123456789abc';
 const BUZZER_WRITE_UUID = 'deadbeef-1234-1234-1234-123456789abd';
 const RSSI_READ_UUID = 'abcd1234-5678-1234-5678-abcdef123457';
+const NAME_WRITE_UUID = 'deadbeef-1234-1234-1234-123456789abe';
+
+const MAX_NAME_LENGTH = 20;
 
 // ============================================================================
 // Convert RSSI to proximity percentage (0-100%)
@@ -48,6 +51,7 @@ export default function useBLE() {
   const ledCharacteristicRef = useRef(null);
   const buzzerCharacteristicRef = useRef(null);
   const rssiCharacteristicRef = useRef(null);
+  const nameCharacteristicRef = useRef(null);
   const pollingActiveRef = useRef(false);
 
   // ========================================================================
@@ -133,6 +137,10 @@ export default function useBLE() {
     const rssiCharacteristic = await service.getCharacteristic(RSSI_READ_UUID);
     rssiCharacteristicRef.current = rssiCharacteristic;
 
+    // Get Name characteristic (firmware-side device naming)
+    const nameCharacteristic = await service.getCharacteristic(NAME_WRITE_UUID);
+    nameCharacteristicRef.current = nameCharacteristic;
+
     deviceRef.current = device;
 
     // Listen for unexpected disconnects (e.g. walking out of range, the
@@ -145,6 +153,7 @@ export default function useBLE() {
       ledCharacteristicRef.current = null;
       buzzerCharacteristicRef.current = null;
       rssiCharacteristicRef.current = null;
+      nameCharacteristicRef.current = null;
       setConnectedDevice(null);
       setRssi(null);
       setProximityPercent(0);
@@ -222,6 +231,7 @@ export default function useBLE() {
       ledCharacteristicRef.current = null;
       buzzerCharacteristicRef.current = null;
       rssiCharacteristicRef.current = null;
+      nameCharacteristicRef.current = null;
       setConnectedDevice(null);
       setRssi(null);
       setProximityPercent(0);
@@ -297,6 +307,33 @@ export default function useBLE() {
   }, []);
 
   // ========================================================================
+  // Send Device Name (firmware-side naming)
+  // Writes the name to the ESP32, which persists it to NVS and renames
+  // itself immediately. Truncates to MAX_NAME_LENGTH to match firmware's
+  // own cap. Unlike sendLedBrightness/sendBuzzerVolume, this THROWS on
+  // failure instead of swallowing the error — the caller (Settings/App.jsx)
+  // needs to know if a rename didn't actually reach the device, so it can
+  // avoid saving a name locally that the firmware never received.
+  // ========================================================================
+  const sendDeviceName = useCallback(async (name) => {
+    if (!nameCharacteristicRef.current) {
+      throw new Error('Name characteristic not connected');
+    }
+
+    const truncated = name.length > MAX_NAME_LENGTH
+      ? name.substring(0, MAX_NAME_LENGTH)
+      : name;
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(truncated);
+
+    await nameCharacteristicRef.current.writeValue(data);
+    console.log('Device name sent:', truncated);
+
+    return truncated;
+  }, []);
+
+  // ========================================================================
   // Get Output Value from Proximity
   // Returns 0-255 based on how close the device is
   // ========================================================================
@@ -313,8 +350,10 @@ export default function useBLE() {
     startDiscovery,
     sendLedBrightness,
     sendBuzzerVolume,
+    sendDeviceName,
     rssi,
     proximityPercent,
     getProximityOutputValue
   };
 }
+

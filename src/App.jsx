@@ -14,18 +14,12 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   // Known Keyholders (id, name, lastConnected), loaded from storage.js.
-  // Replaces the old flat deviceNames object — same purpose (friendly
-  // name per physical device), richer shape so we can build history/
-  // reconnect features on top of it.
   const [knownDevices, setKnownDevices] = useState(() => getKnownDevices());
 
   // Devices Chrome still remembers permission for (Chrome/Android only —
   // feature-detected below). Cross-referenced with knownDevices so we know
   // which known Keyholders can attempt a silent reconnect (no OS picker).
   const [availableKnownDevices, setAvailableKnownDevices] = useState([]);
-
-  // TEMPORARY DEBUG STATE — remove once "Known Keyholders" issue is diagnosed.
-  const [debugInfo, setDebugInfo] = useState('checking...');
   
   // Proximity Response Toggle
   const [proximityResponseEnabled, setProximityResponseEnabled] = useState(() => {
@@ -59,6 +53,7 @@ export default function App() {
     startDiscovery,
     sendLedBrightness,
     sendBuzzerVolume,
+    sendDeviceName,
     rssi,
     proximityPercent,
     getProximityOutputValue
@@ -80,7 +75,6 @@ export default function App() {
   useEffect(() => {
     if (!navigator.bluetooth?.getDevices) {
       setAvailableKnownDevices([]);
-      setDebugInfo(`Known: ${knownDevices.length} | getDevices() NOT SUPPORTED on this browser`);
       return;
     }
 
@@ -93,12 +87,10 @@ export default function App() {
           })
           .filter(Boolean);
         setAvailableKnownDevices(matched);
-        setDebugInfo(`Known: ${knownDevices.length} | Chrome remembers: ${devices.length} | Matched: ${matched.length}`);
       })
       .catch((err) => {
         console.error('getDevices() failed:', err);
         setAvailableKnownDevices([]);
-        setDebugInfo(`Known: ${knownDevices.length} | getDevices() ERROR: ${err.message}`);
       });
   }, [knownDevices]);
 
@@ -121,10 +113,28 @@ export default function App() {
     ? (knownDevices.find((d) => d.id === connectedDevice.id)?.name || connectedDevice.name || 'My Keyholder')
     : 'My Device';
 
-  const handleRenameDevice = (newName) => {
+  // Rename flow: write the new name to the firmware first (NVS + live
+  // rename), and only save it into local storage if that write succeeds.
+  // This keeps the OS-picker name (firmware) and the in-app name
+  // (localStorage) from drifting out of sync — if the BLE write fails
+  // (e.g. connection drops mid-write), the app keeps showing the old name
+  // rather than silently saving a name the device never received.
+  // Requires an active connection — Settings only shows the rename UI
+  // when connectedDevice is set, so this should never be called otherwise.
+  const handleRenameDevice = async (newName) => {
     if (!connectedDevice) return;
-    saveKnownDevice(connectedDevice.id, newName);
-    setKnownDevices(getKnownDevices());
+
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    try {
+      const appliedName = await sendDeviceName(trimmed);
+      saveKnownDevice(connectedDevice.id, appliedName);
+      setKnownDevices(getKnownDevices());
+    } catch (error) {
+      console.error('Rename failed:', error);
+      alert('Could not rename device: ' + error.message);
+    }
   };
 
   const handleDisconnect = () => {
@@ -193,7 +203,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      
+
       {/* Settings Panel */}
       {showSettings && (
         <Settings

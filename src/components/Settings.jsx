@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+const MAX_NAME_LENGTH = 20;
+
 export default function Settings({
   darkMode,
   onThemeToggle,
@@ -11,11 +13,21 @@ export default function Settings({
 }) {
   const [showRenameInput, setShowRenameInput] = useState(false);
   const [newName, setNewName] = useState(deviceName);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleRename = () => {
-    if (newName.trim() && newName !== deviceName) {
-      onRenameDevice(newName);
+  const handleRename = async () => {
+    if (!newName.trim() || newName === deviceName) return;
+
+    setIsSaving(true);
+    try {
+      // onRenameDevice writes to the firmware over BLE and only saves
+      // locally if that succeeds — this call can take a moment (a real
+      // BLE write), hence the isSaving state so the button doesn't look
+      // unresponsive while it's in flight.
+      await onRenameDevice(newName);
       setShowRenameInput(false);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -66,30 +78,43 @@ export default function Settings({
                   Device Name
                 </p>
                 {showRenameInput ? (
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      type="text"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      className={`flex-1 px-3 py-2 rounded border ${inputClass}`}
-                      placeholder="Device name"
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleRename}
-                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowRenameInput(false);
-                        setNewName(deviceName);
-                      }}
-                      className={`px-3 py-2 rounded border ${cardClass}`}
-                    >
-                      Cancel
-                    </button>
+                  <div className="mt-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        maxLength={MAX_NAME_LENGTH}
+                        className={`flex-1 px-3 py-2 rounded border ${inputClass}`}
+                        placeholder="Device name"
+                        autoFocus
+                        disabled={isSaving}
+                      />
+                      <button
+                        onClick={handleRename}
+                        disabled={isSaving}
+                        className={`px-3 py-2 rounded font-medium text-white ${
+                          isSaving
+                            ? 'bg-emerald-800 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowRenameInput(false);
+                          setNewName(deviceName);
+                        }}
+                        disabled={isSaving}
+                        className={`px-3 py-2 rounded border ${cardClass}`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className={`text-xs mt-1 ${darkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+                      Max {MAX_NAME_LENGTH} characters. This updates the name shown when scanning for your Keyholder, not just in this app.
+                    </p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between mt-2">
@@ -150,7 +175,7 @@ export default function Settings({
         <div className={`p-4 rounded-lg border ${cardClass}`}>
           <p className="font-medium mb-2">About</p>
           <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-            Keyholder PWA v2.5
+            Keyholder PWA v3.1
           </p>
           <p className={`text-xs mt-2 ${darkMode ? 'text-slate-500' : 'text-slate-500'}`}>
             A proximity key-finder with BLE connectivity and independent LED/buzzer control.
