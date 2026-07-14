@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import Settings from './components/Settings';
 import useBLE from './hooks/useBLE';
+import { getKnownDevices, saveKnownDevice } from './storage';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -11,14 +12,11 @@ export default function App() {
   
   const [showSettings, setShowSettings] = useState(false);
 
-  // Per-device friendly names, keyed by the device's unique Bluetooth ID
-  // (connectedDevice.id) rather than one flat string — so each physical
-  // Keyholder can have its own name ("Wallet", "TV Remote", etc.) instead
-  // of every device sharing whatever name was typed last.
-  const [deviceNames, setDeviceNames] = useState(() => {
-    const saved = localStorage.getItem('keyholder-device-names');
-    return saved ? JSON.parse(saved) : {};
-  });
+  // Known Keyholders (id, name, lastConnected), loaded from storage.js.
+  // Replaces the old flat deviceNames object — same purpose (friendly
+  // name per physical device), richer shape so we can build history/
+  // reconnect features on top of it in later steps.
+  const [knownDevices, setKnownDevices] = useState(() => getKnownDevices());
   
   // Proximity Response Toggle
   const [proximityResponseEnabled, setProximityResponseEnabled] = useState(() => {
@@ -61,11 +59,6 @@ export default function App() {
     localStorage.setItem('keyholder-theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
-  // Save device names map
-  useEffect(() => {
-    localStorage.setItem('keyholder-device-names', JSON.stringify(deviceNames));
-  }, [deviceNames]);
-
   // Save proximity response preference
   useEffect(() => {
     localStorage.setItem('keyholder-proximity-response', proximityResponseEnabled ? 'true' : 'false');
@@ -76,15 +69,16 @@ export default function App() {
   };
 
   // Friendly name for the currently connected device: look up by its
-  // Bluetooth ID, fall back to the raw BLE advertised name, then a generic
-  // default if neither is available.
+  // Bluetooth ID in knownDevices, fall back to the raw BLE advertised
+  // name, then a generic default if neither is available.
   const deviceName = connectedDevice
-    ? (deviceNames[connectedDevice.id] || connectedDevice.name || 'My Keyholder')
+    ? (knownDevices.find((d) => d.id === connectedDevice.id)?.name || connectedDevice.name || 'My Keyholder')
     : 'My Device';
 
   const handleRenameDevice = (newName) => {
     if (!connectedDevice) return;
-    setDeviceNames((prev) => ({ ...prev, [connectedDevice.id]: newName }));
+    saveKnownDevice(connectedDevice.id, newName);
+    setKnownDevices(getKnownDevices());
   };
 
   const handleDisconnect = () => {
@@ -96,7 +90,7 @@ export default function App() {
   const handleResetAll = () => {
     if (window.confirm('Reset all settings? This will clear device names and theme preferences.')) {
       localStorage.clear();
-      setDeviceNames({});
+      setKnownDevices([]);
       setDarkMode(true);
       setProximityResponseEnabled(false);
       setLedOn(false);
