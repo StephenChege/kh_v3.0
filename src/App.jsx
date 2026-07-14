@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import Settings from './components/Settings';
+import KnownDevicesList from './components/KnownDevicesList';
 import useBLE from './hooks/useBLE';
-import { getKnownDevices, saveKnownDevice } from './storage';
+import { getKnownDevices, saveKnownDevice, updateLastConnected } from './storage';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -49,6 +50,7 @@ export default function App() {
   const { 
     connectedDevice, 
     connect, 
+    connectToKnown,
     disconnect, 
     discoveryInProgress,
     startDiscovery,
@@ -96,6 +98,14 @@ export default function App() {
 
   const handleAddDevice = async () => {
     await startDiscovery();
+  };
+
+  // Called by KnownDevicesList after a successful silent reconnect.
+  // Bumps the device's lastConnected timestamp and refreshes knownDevices
+  // so the list re-sorts with most-recently-used first.
+  const handleKnownDeviceConnected = (id) => {
+    updateLastConnected(id);
+    setKnownDevices(getKnownDevices());
   };
 
   // Friendly name for the currently connected device: look up by its
@@ -194,26 +204,35 @@ export default function App() {
       <main className="max-w-2xl mx-auto px-4 py-6 pb-20">
         {/* Device Connection */}
         {!connectedDevice && (
-          <div className={`p-6 rounded-lg border-2 border-dashed ${
-            darkMode ? 'border-slate-700 bg-slate-900/50' : 'border-slate-300 bg-slate-100'
-          } text-center mb-6`}>
-            <p className={`mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-              No device connected
-            </p>
-            <button
-              onClick={handleAddDevice}
-              disabled={discoveryInProgress}
-              className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                discoveryInProgress
-                  ? darkMode
-                    ? 'bg-slate-800 text-slate-400'
-                    : 'bg-slate-200 text-slate-400'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              }`}
-            >
-              {discoveryInProgress ? 'Scanning...' : 'Connect Device'}
-            </button>
-          </div>
+          <>
+            <KnownDevicesList
+              darkMode={darkMode}
+              availableKnownDevices={availableKnownDevices}
+              connectToKnown={connectToKnown}
+              onConnectSuccess={handleKnownDeviceConnected}
+            />
+
+            <div className={`p-6 rounded-lg border-2 border-dashed ${
+              darkMode ? 'border-slate-700 bg-slate-900/50' : 'border-slate-300 bg-slate-100'
+            } text-center mb-6`}>
+              <p className={`mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                No device connected
+              </p>
+              <button
+                onClick={handleAddDevice}
+                disabled={discoveryInProgress}
+                className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                  discoveryInProgress
+                    ? darkMode
+                      ? 'bg-slate-800 text-slate-400'
+                      : 'bg-slate-200 text-slate-400'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+              >
+                {discoveryInProgress ? 'Scanning...' : 'Connect New Device'}
+              </button>
+            </div>
+          </>
         )}
 
         {/* Control Panel */}
