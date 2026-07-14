@@ -15,8 +15,13 @@ export default function App() {
   // Known Keyholders (id, name, lastConnected), loaded from storage.js.
   // Replaces the old flat deviceNames object — same purpose (friendly
   // name per physical device), richer shape so we can build history/
-  // reconnect features on top of it in later steps.
+  // reconnect features on top of it.
   const [knownDevices, setKnownDevices] = useState(() => getKnownDevices());
+
+  // Devices Chrome still remembers permission for (Chrome/Android only —
+  // feature-detected below). Cross-referenced with knownDevices so we know
+  // which known Keyholders can attempt a silent reconnect (no OS picker).
+  const [availableKnownDevices, setAvailableKnownDevices] = useState([]);
   
   // Proximity Response Toggle
   const [proximityResponseEnabled, setProximityResponseEnabled] = useState(() => {
@@ -64,6 +69,31 @@ export default function App() {
     localStorage.setItem('keyholder-proximity-response', proximityResponseEnabled ? 'true' : 'false');
   }, [proximityResponseEnabled]);
 
+  // On load, check which known Keyholders Chrome still has permission for.
+  // getDevices() is Chrome/Android-only — feature-detect and skip silently
+  // elsewhere (e.g. Bluefy on iOS has no such API).
+  useEffect(() => {
+    if (!navigator.bluetooth?.getDevices) {
+      setAvailableKnownDevices([]);
+      return;
+    }
+
+    navigator.bluetooth.getDevices()
+      .then((devices) => {
+        const matched = devices
+          .map((device) => {
+            const known = knownDevices.find((d) => d.id === device.id);
+            return known ? { ...known, bluetoothDevice: device } : null;
+          })
+          .filter(Boolean);
+        setAvailableKnownDevices(matched);
+      })
+      .catch((err) => {
+        console.error('getDevices() failed:', err);
+        setAvailableKnownDevices([]);
+      });
+  }, [knownDevices]);
+
   const handleAddDevice = async () => {
     await startDiscovery();
   };
@@ -91,6 +121,7 @@ export default function App() {
     if (window.confirm('Reset all settings? This will clear device names and theme preferences.')) {
       localStorage.clear();
       setKnownDevices([]);
+      setAvailableKnownDevices([]);
       setDarkMode(true);
       setProximityResponseEnabled(false);
       setLedOn(false);
