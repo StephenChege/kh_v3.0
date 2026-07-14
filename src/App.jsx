@@ -23,6 +23,9 @@ export default function App() {
   // feature-detected below). Cross-referenced with knownDevices so we know
   // which known Keyholders can attempt a silent reconnect (no OS picker).
   const [availableKnownDevices, setAvailableKnownDevices] = useState([]);
+
+  // TEMPORARY DEBUG STATE — remove once "Known Keyholders" issue is diagnosed.
+  const [debugInfo, setDebugInfo] = useState('checking...');
   
   // Proximity Response Toggle
   const [proximityResponseEnabled, setProximityResponseEnabled] = useState(() => {
@@ -77,6 +80,7 @@ export default function App() {
   useEffect(() => {
     if (!navigator.bluetooth?.getDevices) {
       setAvailableKnownDevices([]);
+      setDebugInfo(`Known: ${knownDevices.length} | getDevices() NOT SUPPORTED on this browser`);
       return;
     }
 
@@ -89,10 +93,12 @@ export default function App() {
           })
           .filter(Boolean);
         setAvailableKnownDevices(matched);
+        setDebugInfo(`Known: ${knownDevices.length} | Chrome remembers: ${devices.length} | Matched: ${matched.length}`);
       })
       .catch((err) => {
         console.error('getDevices() failed:', err);
         setAvailableKnownDevices([]);
+        setDebugInfo(`Known: ${knownDevices.length} | getDevices() ERROR: ${err.message}`);
       });
   }, [knownDevices]);
 
@@ -187,6 +193,13 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* TEMPORARY DEBUG BANNER — remove once "Known Keyholders" issue is diagnosed */}
+      <div className="max-w-2xl mx-auto px-4 pt-3">
+        <div className="p-2 rounded bg-amber-500/20 border border-amber-500 text-amber-300 text-xs">
+          DEBUG: {debugInfo}
+        </div>
+      </div>
 
       {/* Settings Panel */}
       {showSettings && (
