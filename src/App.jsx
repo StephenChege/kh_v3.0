@@ -106,6 +106,15 @@ export default function App() {
     setKnownDevices(getKnownDevices());
   };
 
+  // Called by KnownDevicesList after a device is deleted (removeKnownDevice
+  // already ran against storage.js at that point). Drops it from both
+  // knownDevices and availableKnownDevices so the row disappears immediately
+  // without needing a getDevices() re-check.
+  const handleDeviceForgotten = (id) => {
+    setKnownDevices((prev) => prev.filter((d) => d.id !== id));
+    setAvailableKnownDevices((prev) => prev.filter((d) => d.id !== id));
+  };
+
   // Friendly name for the currently connected device: look up by its
   // Bluetooth ID in knownDevices, fall back to the raw BLE advertised
   // name, then a generic default if neither is available.
@@ -226,6 +235,7 @@ export default function App() {
               availableKnownDevices={availableKnownDevices}
               connectToKnown={connectToKnown}
               onConnectSuccess={handleKnownDeviceConnected}
+              onDeviceForgotten={handleDeviceForgotten}
             />
 
             <div className={`p-6 rounded-lg border-2 border-dashed ${
